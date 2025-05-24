@@ -1,0 +1,22 @@
+# dots and unders
+.*
+/_*
+
+# python staff
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# temporary files
+*.swp
+*.swo
+*.bak
+*.log
+*.tmp
+*.db
+
+
