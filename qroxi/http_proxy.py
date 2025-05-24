@@ -87,13 +87,14 @@ def proxy_traffic(cfg, src, dst, resplit=False):
     try:
         while True:
             data = src.recv(cfg.buffer_size)
-            log.debug("[%d] [%s]→[%s] %d bytes {%.64s}", i, src_name, dst_name, len(data), repr(data[:64]))
+            if cfg.debug:
+                log.debug("[%d] [%s]→[%s] %db {%.80s}", i, src_name, dst_name, len(data), data[:64].hex())
             if not data:
                 break
             i += 1
             rx += len(data)
-            if i == 1 and resplit:
-                data, parts = split_tls_packet(data)
+            if i <= cfg.resplit_count and resplit:
+                data, parts = split_tls_record(cfg, data)
                 log.info("[%d] resplit data → %db %d parts", i, len(data), parts)
             dst.sendall(data)
             tx += len(data)
@@ -102,30 +103,39 @@ def proxy_traffic(cfg, src, dst, resplit=False):
     finally:
         src.close()
         dst.close()
-    log.info("proxy_traffic done: %s → %s, rx=%d, tx=%d", src_name, dst_name, rx, tx)
+    log.info("proxy_traffic done: %s→%s, rx=%d, tx=%d [%d]", src_name, dst_name, rx, tx, i)
     return i, rx, tx
 
 
-def split_tls_packet(data, min_len=32, max_len=128):
+def split_tls_record(cfg, data):
 
-    if len(data) >= 5 and data.startswith(b"\x16\x03"):
-        tls_len = int.from_bytes(data[3:5], byteorder="big")
-        log.debug("TLS handshake: %s tls-len=%s data-len=%s", data[0:16].hex(), tls_len, len(data))
-    else:
-        log.debug("TLS not here: %s", data[0:16].hex())
+    data_len = len(data)
+
+    if data_len < 5 or not data.startswith(b"\x16\x03"):
+        if cfg.debug:
+            log.debug("TLS not here: %s", data[0:16].hex())
+        return data, 1
+
+    tls_len = int.from_bytes(data[3:5], byteorder="big")
+
+    if cfg.debug:
+        log.debug("TLS record: %s tls-len=%s data-len=%s", data[0:16].hex(), tls_len, data_len)
+
+    if tls_len + 5 != data_len:
+        log.warning("TLS record length mismatch: %s tls-len=%s data-len=%s", data[0:16].hex(), tls_len, data_len)
         return data, 1
 
     parts = []
     pos = 5
-    data_len = len(data)
 
     while pos < data_len:
-        part_len = random.randint(min(data_len - pos, min_len), min(max_len, data_len - pos))
-        part = data[pos : pos + part_len]
+        part_len = random.randint(min(data_len - pos, cfg.min_split), min(cfg.max_split, data_len - pos))
+        part_data = data[pos : pos + part_len]
         parts.append(bytes.fromhex("160304"))
-        parts.append(int(len(part)).to_bytes(2, byteorder="big"))
-        parts.append(part)
-        log.debug("part_len=%d, part=%.16s", part_len, repr(part))
+        parts.append(part_len.to_bytes(2, byteorder="big"))
+        parts.append(part_data)
+        if cfg.debug:
+            log.debug("pos=%d part_len=%d, part=%.80s", pos, part_len, part_data[:32].hex())
         pos += part_len
 
     return b"".join(parts), len(parts)
