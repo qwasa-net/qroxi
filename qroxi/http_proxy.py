@@ -64,10 +64,20 @@ def handle_client(cfg, client):
         client.close()
         return
 
-    t1 = threading.Thread(target=proxy_traffic, args=(cfg, client, remote, cfg.resplit))
-    t2 = threading.Thread(target=proxy_traffic, args=(cfg, remote, client, False))
+    t1 = threading.Thread(target=try_proxy_traffic, args=(cfg, client, remote, cfg.resplit))
+    t2 = threading.Thread(target=try_proxy_traffic, args=(cfg, remote, client, False))
     t1.start()
     t2.start()
+
+
+def try_proxy_traffic(cfg, src, dst, resplit=False):
+    try:
+        return proxy_traffic(cfg, src, dst, resplit)
+    except Exception as e:
+        log.error("proxy_traffic: %s", e)
+        src.close()
+        dst.close()
+        return -1, -1, -1
 
 
 def proxy_traffic(cfg, src, dst, resplit=False):
