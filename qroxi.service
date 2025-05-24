@@ -1,0 +1,19 @@
+[Unit]
+Description=Qroxi Background Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -m qroxi --resplit
+WorkingDirectory=/usr/local/lib/qroxi
+
+Restart=on-failure
+RestartSec=30
+RuntimeMaxSec=12h
+RuntimeRandomizedExtraSec=3600
+
+StandardOutput=append:/var/log/qroxi.log
+StandardError=append:/var/log/qroxi_error.log
+
+[Install]
+WantedBy=multi-user.target
