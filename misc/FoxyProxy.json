@@ -44,6 +44,12 @@
           "title": "",
           "pattern": "https://youtu.be/",
           "active": true
+        },
+        {
+          "type": "wildcard",
+          "title": "",
+          "pattern": "https://*.ytimg.com/",
+          "active": true
         }
       ],
       "exclude": [],

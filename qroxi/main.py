@@ -25,13 +25,5 @@ def read_args():
     args = parser.parse_args()
     return Config(
         name="qproxi",
-        resplit=args.resplit,
-        resplit_count=args.resplit_count,
-        host=args.host,
-        port=args.port,
-        debug=args.debug,
-        silent=args.silent,
-        buffer_size=args.buffer_size,
-        min_split=args.min_split,
-        max_split=args.max_split,
+        **vars(args),
     )

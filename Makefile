@@ -14,7 +14,7 @@ dev-venv:
 dev-install: dev-venv
 	.venv/bin/pip install -U black ruff isort
 
-dev-format: dev-install
+dev-format:
 	.venv/bin/isort qroxi
 	.venv/bin/black qroxi
 
