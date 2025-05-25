@@ -1,0 +1,53 @@
+{
+  "mode": "pattern",
+  "sync": false,
+  "autoBackup": true,
+  "passthrough": "",
+  "theme": "",
+  "container": {},
+  "commands": {
+    "setProxy": "",
+    "setTabProxy": "",
+    "includeHost": "",
+    "excludeHost": ""
+  },
+  "data": [
+    {
+      "active": true,
+      "title": "qRoxi",
+      "type": "http",
+      "hostname": "127.0.0.1",
+      "port": "18010",
+      "username": "",
+      "password": "",
+      "cc": "",
+      "city": "",
+      "color": "#ffff00",
+      "pac": "",
+      "pacString": "",
+      "proxyDNS": true,
+      "include": [
+        {
+          "type": "wildcard",
+          "title": "",
+          "pattern": "https://*.youtube.com/",
+          "active": true
+        },
+        {
+          "type": "wildcard",
+          "title": "",
+          "pattern": "https://*.googlevideo.com/",
+          "active": true
+        },
+        {
+          "type": "wildcard",
+          "title": "",
+          "pattern": "https://youtu.be/",
+          "active": true
+        }
+      ],
+      "exclude": [],
+      "tabProxy": []
+    }
+  ]
+}
