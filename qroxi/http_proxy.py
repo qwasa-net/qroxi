@@ -8,20 +8,16 @@ log = get_logger()
 
 
 def run(cfg):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         listen_to = (cfg.host, cfg.port)
-        s.bind(listen_to)
-        s.listen(128)
+        server.bind(listen_to)
+        server.listen(128)
         log.info("proxy listening on %s", listen_to)
         while True:
-            client, _ = s.accept()
-            log.info("accepted connection from %s", client.getpeername())
-            thread = threading.Thread(
-                target=try_handle_client,
-                args=(cfg, client),
-                daemon=True,
-            )
+            client, _ = server.accept()
+            log.info("accepted connection from %s [%d]", client.getpeername(), threading.active_count())
+            thread = threading.Thread(target=try_handle_client, args=(cfg, client), daemon=True)
             thread.start()
 
 
@@ -30,7 +26,16 @@ def try_handle_client(cfg, client):
         handle_client(cfg, client)
     except Exception as e:
         log.error("handle_client: %s", e)
-        client.close()
+        try_shutdown_socket(client)
+
+
+def try_shutdown_socket(sock):
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    except Exception as e:
+        log.debug("shutdown socket error: %s", e)
+    finally:
+        sock.close()
 
 
 def handle_client(cfg, client):
@@ -39,7 +44,7 @@ def handle_client(cfg, client):
     while b"\r\n\r\n" not in request:
         chunk = client.recv(cfg.buffer_size)
         if not chunk:
-            client.close()
+            try_shutdown_socket(client)
             return
         request += chunk
 
@@ -48,7 +53,7 @@ def handle_client(cfg, client):
     if not first_line.startswith("CONNECT"):
         log.error("bad request: %s", first_line)
         client.sendall(b"HTTP/1.1 400 Bad Request\r\n\r\n")
-        client.close()
+        try_shutdown_socket(client)
         return
 
     method, addr, _ = first_line.split()
@@ -61,7 +66,7 @@ def handle_client(cfg, client):
         client.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
     except Exception:
         client.sendall(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
-        client.close()
+        try_shutdown_socket(client)
         return
 
     t1 = threading.Thread(target=try_proxy_traffic, args=(cfg, client, remote, cfg.resplit))
@@ -75,8 +80,8 @@ def try_proxy_traffic(cfg, src, dst, resplit=False):
         return proxy_traffic(cfg, src, dst, resplit)
     except Exception as e:
         log.error("proxy_traffic: %s", e)
-        src.close()
-        dst.close()
+        try_shutdown_socket(src)
+        try_shutdown_socket(dst)
         return -1, -1, -1
 
 
@@ -94,15 +99,18 @@ def proxy_traffic(cfg, src, dst, resplit=False):
             i += 1
             rx += len(data)
             if i <= cfg.resplit_count and resplit:
-                data, parts = split_tls_record(cfg, data)
-                log.info("[%d] resplit data → %db %d parts", i, len(data), parts)
-            dst.sendall(data)
+                parts, parted_data_len = split_tls_record(cfg, data)
+                log.info("[%d] resplit data → %db %d parts", i, parted_data_len, len(parts))
+            else:
+                parts = [data]
+            for data in parts:
+                dst.sendall(data)
             tx += len(data)
     except Exception as e:
         log.error("proxy_traffic: %s", e)
     finally:
-        src.close()
-        dst.close()
+        try_shutdown_socket(src)
+        try_shutdown_socket(dst)
     log.info("proxy_traffic done: %s→%s, rx=%d, tx=%d [%d]", src_name, dst_name, rx, tx, i)
     return i, rx, tx
 
@@ -114,7 +122,7 @@ def split_tls_record(cfg, data):
     if data_len < 5 or not data.startswith(b"\x16\x03"):
         if cfg.debug:
             log.debug("TLS not here: %s", data[0:16].hex())
-        return data, 1
+        return [data], 1
 
     tls_len = int.from_bytes(data[3:5], byteorder="big")
 
@@ -123,19 +131,21 @@ def split_tls_record(cfg, data):
 
     if tls_len + 5 != data_len:
         log.warning("TLS record length mismatch: %s tls-len=%s data-len=%s", data[0:16].hex(), tls_len, data_len)
-        return data, 1
+        return [data], 1
 
     parts = []
+    parted_data_len = 0
     pos = 5
 
     while pos < data_len:
         part_len = random.randint(min(data_len - pos, cfg.min_split), min(cfg.max_split, data_len - pos))
         part_data = data[pos : pos + part_len]
-        parts.append(bytes.fromhex("160304"))
-        parts.append(part_len.to_bytes(2, byteorder="big"))
-        parts.append(part_data)
+        parts.append(bytes.fromhex("160304"))  # 3 bytes TLS record header
+        parts.append(part_len.to_bytes(2, byteorder="big"))  # 2 bytes TLS record length
+        parts.append(part_data)  # part data
         if cfg.debug:
             log.debug("pos=%d part_len=%d, part=%.80s", pos, part_len, part_data[:32].hex())
         pos += part_len
+        parted_data_len += 3 + 2 + part_len
 
-    return b"".join(parts), len(parts)
+    return parts, parted_data_len
